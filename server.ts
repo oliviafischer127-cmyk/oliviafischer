@@ -29,47 +29,34 @@ const ai = new GoogleGenAI({
 });
 
 const WONNY_SYSTEM_INSTRUCTION = `
-You are Wonny, the personal executive voice assistant and representative for Olivia Fischer.
+You are Wonny, the personal executive voice assistant representing Olivia Fischer.
 
-VOICE CHARACTERISTICS & PERSONA:
-- Deep, calm, resonant, and refined male tone.
-- When speaking English, speak with a sophisticated, articulate American accent.
-- When speaking French, speak with an authentic, elegant French accent.
-- Your manner is poised, discreet, highly professional, polished, and warmly welcoming, embodying the highest standards of the luxury and prestige sector.
-- When responding aloud or in text, keep your answers articulate and natural (typically 2 to 4 sentences for voice clarity, unless asked for comprehensive case study or background details).
-- You can switch seamlessly between English and French depending on what the user speaks or requests.
+CONVERSATIONAL INTELLIGENCE & ANTI-REPETITION RULES (CRITICAL):
+- NEVER repeat the same greeting or introduction ("Good day, I am Wonny...", "Je suis Wonny...").
+- Do NOT re-introduce yourself unless explicitly asked "Who are you?".
+- After the initial welcome, jump DIRECTLY to answering the user's specific question.
+- Keep each voice response natural, fresh, articulate, and concise (typically 2 to 3 sentences, ~30 to 60 words) so it sounds like an effortless executive conversation, not a robotic script.
+- Vary your openings, vocabulary, and phrasing. Never use repetitive formulaic templates.
+- If asked a follow-up, answer contextually based on the chat history without repeating prior facts.
+- Answer in English with an articulate American accent, or in French with a refined French accent, depending on the language used.
 
-ABOUT OLIVIA FISCHER:
+DETAILED BACKGROUND OF OLIVIA FISCHER:
 - Academic Profile:
-  - Final-year Master's student with a dual French-German academic background.
-  - Double Master's Degree (04/2026 - Present):
+  - Final-year Master's candidate with a Franco-German trajectory.
+  - Double Master's Degree (04/2026 – Present):
     1. International Marketing Management at Berlin School of Economics and Law (HWR Berlin).
     2. Communication, Luxury and Prestige Marketing at ESCE International Business School (ESCE Paris).
-  - Bachelor's Degree in International Management (09/2022 - 03/2026) at Berlin School of Economics and Law (HWR Berlin), completed two semesters at ESCE Paris.
-- Work Experience:
-  - Communication Intern at Kusmi Tea, Paris, France (09/2024 - 02/2025):
-    - Independently managed Kusmi Tea's social media channels across the DACH market (Germany, Austria, Switzerland), including content adaptation, publishing, and community engagement.
-    - Managed influencer marketing activities for DACH: influencer research and selection, outreach, brief coordination, product gifting, and shipment management.
-    - Coordinated brand collaborations across the DACH market from partner research and outreach to campaign planning and execution.
-    - Conducted monthly campaign performance analyses and reported key results to senior leadership.
-    - Participated in brand photoshoots and contributed to the development of visual concepts and creative content.
-    - Created social media and brand content strictly aligned with Kusmi Tea's visual identity and brand strategy.
-- Core Skills & Expertise:
-  - Digital & Marketing: Social Media Management, Influencer Marketing, Brand Collaborations, Content Creation, Community Management, Campaign Performance Analysis.
-  - Tools: Microsoft 365 (Excel, PowerPoint, Word), Canva, Meta Business Suite.
-  - Languages: German (Native), English (C1 - Professional / Fluent), French (C1 - Professional / Fluent), Polish (B2 - Upper Intermediate), Spanish (B1 - Intermediate).
-  - Personal Passions: Dancing, Haute Parfumerie, European art, and Gastronomy.
-- Contact Details:
-  - Seeking opportunities in Luxury Marketing, Brand Communication, Influencer Strategy, or International Brand Management.
-  - Email: fischer.olivia12@gmail.com
-  - Phone: +49 157 740 624 50
-  - Location: Arcueil / Paris, France (open to travel and international relocation).
-  - LinkedIn: https://www.linkedin.com/in/oliviafischer12
-
-CORE RESPONSIBILITIES AS WONNY:
-- Introduce Olivia's profile with pride and precision to recruiters, luxury houses, agencies, or collaborators.
-- Explain her hands-on successes at Kusmi Tea, her dual Franco-German cultural agility, and her master's specialization in luxury prestige marketing.
-- Guide visitors to explore her experience, request an interview, download her resume, or contact her directly.
+  - Bachelor's in International Management (09/2022 – 03/2026) at HWR Berlin, with two semesters at ESCE Paris.
+- Professional Experience:
+  - Communication Intern at Kusmi Tea, Paris (09/2024 – 02/2025):
+    - Autonomously drove social media across the DACH region (Germany, Austria, Switzerland).
+    - Led influencer marketing, gifting campaigns, and cross-brand collaborations.
+    - Reported monthly analytics, ROI metrics, and social growth to executive leadership.
+    - Contributed to brand photoshoots and visual creative direction adhering to Parisian luxury tea aesthetics.
+- Languages: German (Native), English (C1 - Fluent), French (C1 - Fluent), Polish (B2), Spanish (B1).
+- Key Competencies: Social Media Management, Influencer Outreach & Gifting, Campaign Analytics, Brand Partnerships, Visual Identity, Meta Business Suite, Canva, Microsoft 365.
+- Interests: Classical & Contemporary Dancing (brings discipline and aesthetic grace), Haute Parfumerie, Gastronomy.
+- Contact: fischer.olivia12@gmail.com, +49 157 740 624 50, LinkedIn: linkedin.com/in/oliviafischer12, Arcueil/Paris (open to global luxury travel/relocation).
 `;
 
 // Health check endpoint
@@ -83,39 +70,39 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Domain-specific knowledge fallback generator if API experiences high demand
+// Domain-specific dynamic fallback generator if all APIs are temporarily offline
 function generateKnowledgeFallback(message: string, language: 'en' | 'fr'): string {
   const lower = message.toLowerCase();
   const isFr = language === 'fr' || lower.includes('bonjour') || lower.includes('français') || lower.includes('parlez');
 
   if (isFr) {
     if (lower.includes('kusmi') || lower.includes('expérience') || lower.includes('stage') || lower.includes('travail')) {
-      return "Chez Kusmi Tea à Paris (09/2024 – 02/2025), Olivia a piloté en autonomie les réseaux sociaux pour l'ensemble du marché DACH (Allemagne, Autriche, Suisse). Elle a orchestré les relations influenceurs, le gifting de produits, les collaborations de marque et les analyses mensuelles de performance pour la direction.";
+      return "Chez Kusmi Tea à Paris, Olivia a managé en autonomie les réseaux sociaux pour l'Allemagne, l'Autriche et la Suisse. Elle a orchestré les relations influenceurs, le gifting de produits, les collaborations de marque et les analyses mensuelles de performance.";
     }
     if (lower.includes('master') || lower.includes('étude') || lower.includes('école') || lower.includes('diplôme') || lower.includes('formation')) {
-      return "Olivia prépare actuellement un double diplôme de Master : Management du Marketing International à la HWR Berlin et Communication, Marketing du Luxe et de Prestige à l'ESCE Paris. Ce parcours allie rigueur analytique allemande et savoir-faire créatif du luxe français.";
+      return "Olivia prépare un double diplôme de Master : Management du Marketing International à la HWR Berlin et Communication, Marketing du Luxe et de Prestige à l'ESCE Paris, conjuguant rigueur commerciale allemande et créativité française.";
     }
     if (lower.includes('langue') || lower.includes('allemand') || lower.includes('anglais')) {
-      return "Olivia est parfaitement trilingue avec l'allemand comme langue maternelle, un niveau C1 en anglais et C1 en français. Elle possède également un niveau B2 en polonais et B1 en espagnol, ce qui en fait un atout majeur pour les marques de luxe internationales.";
+      return "Olivia maîtrise 5 langues : l'allemand en langue maternelle, l'anglais et le français au niveau professionnel C1, ainsi que le polonais (B2) et l'espagnol (B1).";
     }
     if (lower.includes('contact') || lower.includes('recrut') || lower.includes('entretien') || lower.includes('email') || lower.includes('téléphone')) {
-      return "Vous pouvez joindre Olivia directement par email à fischer.olivia12@gmail.com, par téléphone au +49 157 740 624 50, ou via son profil LinkedIn (linkedin.com/in/oliviafischer12). Elle est basée en région parisienne et ouverte aux opportunités internationales.";
+      return "Vous pouvez contacter Olivia directement par email à fischer.olivia12@gmail.com ou par téléphone au +49 157 740 624 50. Elle est joignable également via LinkedIn.";
     }
-    return "Bonjour. Je suis Wonny, l'assistant personnel représentant Olivia Fischer. Diplômée en double Master franco-allemand en marketing de luxe (ESCE Paris & HWR Berlin) et forte de son expérience chez Kusmi Tea, Olivia est prête à apporter sa vision stratégique à votre maison.";
+    return "Olivia se spécialise dans le marketing et la communication de prestige. Que souhaitez-vous approfondir concernant ses compétences ou ses réalisations ?";
   } else {
     if (lower.includes('kusmi') || lower.includes('experience') || lower.includes('work') || lower.includes('intern')) {
-      return "At Kusmi Tea in Paris (09/2024 – 02/2025), Olivia independently managed social media across the DACH market (Germany, Austria, and Switzerland). She spearheaded influencer relations, brand partnerships, product gifting, visual content production, and monthly ROI performance analytics for executive leadership.";
+      return "At Kusmi Tea in Paris, Olivia drove social channels for the DACH region, managed high-impact influencer gifting, steered co-branded partnerships, and presented monthly ROI reports to leadership.";
     }
     if (lower.includes('master') || lower.includes('education') || lower.includes('school') || lower.includes('degree') || lower.includes('study')) {
-      return "Olivia is completing a prestigious Double Master's Degree: International Marketing Management at the Berlin School of Economics and Law (HWR Berlin) and Communication Luxury & Prestige Marketing at ESCE International Business School in Paris. It bridges German commercial precision with French luxury savoir-faire.";
+      return "Olivia is completing a Double Master's Degree between HWR Berlin (International Marketing Management) and ESCE Paris (Communication, Luxury & Prestige Marketing), uniting German analytical structure with French luxury craftsmanship.";
     }
     if (lower.includes('language') || lower.includes('speak') || lower.includes('german') || lower.includes('french')) {
-      return "Olivia is exceptionally multilingual: German is her native language, and she holds certified C1 professional fluency in both English and French, along with B2 Polish and B1 Spanish. She navigates cross-border European luxury markets with innate cultural fluency.";
+      return "Olivia speaks 5 languages: German natively, English and French with C1 professional fluency, alongside B2 Polish and B1 Spanish.";
     }
     if (lower.includes('contact') || lower.includes('hire') || lower.includes('interview') || lower.includes('email') || lower.includes('phone') || lower.includes('reach')) {
-      return "You can reach Olivia directly at fischer.olivia12@gmail.com, by telephone at +49 157 740 624 50, or connect via LinkedIn at linkedin.com/in/oliviafischer12. She is based in the Paris area and available for executive luxury marketing roles and international travel.";
+      return "You can reach Olivia directly at fischer.olivia12@gmail.com or by phone at +49 157 740 624 50. She is based in the Paris area and open to global opportunities.";
     }
-    return "Good day. I am Wonny, the executive voice assistant representing Olivia Fischer. With her double Master's degree in luxury marketing (ESCE Paris and HWR Berlin) and her proven track record managing the DACH market for Kusmi Tea, Olivia is an exceptional asset for prestige brand strategy.";
+    return "Olivia specializes in international luxury marketing and prestige brand communication. What specific facet of her background would you like to explore?";
   }
 }
 
@@ -127,31 +114,40 @@ app.post('/api/chat', async (req, res) => {
       return res.status(400).json({ error: 'Message is required' });
     }
 
-    // Format chat contents
-    const contents: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
-
+    // Filter history so turns strictly alternate and the first turn is ALWAYS a 'user' turn
+    const validHistory: Array<{ role: 'user' | 'model'; content: string }> = [];
     for (const h of history.slice(-6)) {
-      if (h.role === 'user' || h.role === 'model') {
-        contents.push({
-          role: h.role,
-          parts: [{ text: h.content }],
-        });
+      if ((h.role === 'user' || h.role === 'model') && h.content && h.content.trim()) {
+        validHistory.push({ role: h.role, content: h.content.trim() });
       }
+    }
+
+    // Gemini API requires the first turn to be 'user'
+    while (validHistory.length > 0 && validHistory[0].role === 'model') {
+      validHistory.shift();
+    }
+
+    const contents: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
+    for (const h of validHistory) {
+      contents.push({
+        role: h.role,
+        parts: [{ text: h.content }],
+      });
     }
 
     contents.push({
       role: 'user',
-      parts: [{ text: message }],
+      parts: [{ text: message.trim() }],
     });
 
     const langDirective = language === 'fr'
-      ? 'Respond in refined French with Wonny persona and authentic French accent.'
-      : 'Respond in refined English with Wonny persona and polished American accent.';
+      ? 'Answer naturally in French with an authentic Parisian accent tone. Answer directly without repeating your name or greetings.'
+      : 'Answer naturally in English with an articulate American accent tone. Answer directly without repeating your name or greetings.';
 
     let replyText = '';
 
-    // Cascade models: gemini-3.8-flash -> gemini-flash-latest -> gemini-3.1-flash-lite -> fallback
-    const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
+    // Fast, responsive, reliable models first
+    const candidateModels = ['gemini-flash-latest', 'gemini-3.1-flash-lite', 'gemini-3.8-flash'];
 
     for (const model of candidateModels) {
       try {
@@ -159,20 +155,19 @@ app.post('/api/chat', async (req, res) => {
           model,
           contents,
           config: {
-            systemInstruction: `${WONNY_SYSTEM_INSTRUCTION}\n\nLanguage Directive: ${langDirective}`,
-            temperature: 0.7,
+            systemInstruction: `${WONNY_SYSTEM_INSTRUCTION}\n\n${langDirective}`,
+            temperature: 0.8,
           },
         });
-        if (response.text) {
-          replyText = response.text;
+        if (response.text && response.text.trim()) {
+          replyText = response.text.trim();
           break;
         }
       } catch (genErr: any) {
-        console.warn(`Model ${model} request note:`, genErr?.message);
+        console.warn(`Model ${model} request notice:`, genErr?.message);
       }
     }
 
-    // If all models hit high demand spikes, use domain knowledge fallback
     if (!replyText) {
       replyText = generateKnowledgeFallback(message, language);
     }

@@ -51,6 +51,8 @@ export default function App() {
     setIsAssistantOpen(true);
   };
 
+  const [greetingIndex, setGreetingIndex] = useState(0);
+
   const playWonnyIntroduction = async () => {
     // If already playing, stop immediately
     if (isHeroAudioPlaying) {
@@ -62,10 +64,21 @@ export default function App() {
     // Unlock browser audio context synchronously inside click handler
     unlockAudioContext();
 
-    const greetingText =
-      selectedLanguage === 'fr'
-        ? "Bonjour et bienvenue. Je suis Wonny, l'assistant vocal exécutif d'Olivia Fischer. Je suis à votre service pour vous présenter son parcours en marketing de luxe chez Kusmi Tea Paris ainsi que son double Master franco-allemand."
-        : "Good day and welcome. I am Wonny, the executive voice assistant representing Olivia Fischer. I am delighted to introduce her expertise in luxury brand marketing at Kusmi Tea Paris, along with her Franco-German double Master's degree.";
+    const enGreetings = [
+      "Welcome. I am Wonny, executive liaison for Olivia Fischer. Olivia brings verified expertise in luxury marketing, having steered social strategy and influencer collaborations for Kusmi Tea Paris, backed by a dual Franco-German Master's degree.",
+      "Greetings. Olivia Fischer specializes in prestige brand communication, uniting German commercial precision from HWR Berlin with French luxury savoir-faire from ESCE Paris. She is fluent in German, English, and French.",
+      "Hello. As Olivia's executive assistant, I invite you to explore her hands-on campaign successes across the DACH market, her influencer gifting programs, and her strategic readiness for international luxury brand leadership.",
+    ];
+
+    const frGreetings = [
+      "Bienvenue. Je suis Wonny, représentant exécutif d'Olivia Fischer. Olivia allie rigueur analytique et créativité de prestige, forte de son expérience chez Kusmi Tea Paris et de son double Master franco-allemand.",
+      "Bonjour. Olivia Fischer est diplômée de l'ESCE Paris et de la HWR Berlin en marketing du luxe. Elle maîtrise cinq langues et pilote avec passion les stratégies de marque et de relations influenceurs.",
+      "Ravi de vous accueillir. N'hésitez pas à me poser vos questions sur les réalisations d'Olivia, ses compétences en gestion de communauté ou pour organiser un entretien direct.",
+    ];
+
+    const list = selectedLanguage === 'fr' ? frGreetings : enGreetings;
+    const greetingText = list[greetingIndex % list.length];
+    setGreetingIndex((prev) => (prev + 1) % list.length);
 
     setIsHeroAudioPlaying(true);
 

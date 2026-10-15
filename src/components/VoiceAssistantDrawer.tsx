@@ -73,13 +73,23 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantProps> = ({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading, interimTranscript]);
 
+  const lastTriggeredPromptRef = useRef<string | null>(null);
+
   // Handle triggered initial prompt from page
   useEffect(() => {
-    if (initialPrompt && isOpen) {
+    if (initialPrompt && isOpen && initialPrompt !== lastTriggeredPromptRef.current) {
+      lastTriggeredPromptRef.current = initialPrompt;
       handleSendMessage(initialPrompt);
       if (onClearInitialPrompt) onClearInitialPrompt();
     }
   }, [initialPrompt, isOpen]);
+
+  // Reset trigger ref when drawer closes
+  useEffect(() => {
+    if (!isOpen) {
+      lastTriggeredPromptRef.current = null;
+    }
+  }, [isOpen]);
 
   // Speak response with double-redundant audio pipeline
   const speakResponse = (text: string, audioBase64?: string | null, language: 'en' | 'fr' = selectedLanguage) => {
@@ -162,19 +172,26 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantProps> = ({
         };
 
         recognition.onresult = (event: any) => {
-          let current = '';
-          for (let i = event.resultIndex; i < event.results.length; i++) {
-            current += event.results[i][0].transcript;
-          }
-          setInterimTranscript(current);
+          let interim = '';
+          let final = '';
 
-          // If final result detected
-          if (event.results[0] && event.results[0].isFinal) {
-            const finalQuery = event.results[0][0].transcript.trim();
-            stopListening();
-            if (finalQuery) {
-              handleSendMessage(finalQuery);
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+              final += transcript;
+            } else {
+              interim += transcript;
             }
+          }
+
+          if (interim) {
+            setInterimTranscript(interim);
+          }
+
+          if (final.trim()) {
+            const finalQuery = final.trim();
+            stopListening();
+            handleSendMessage(finalQuery);
           }
         };
 
