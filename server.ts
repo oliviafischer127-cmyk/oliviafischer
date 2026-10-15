@@ -176,9 +176,9 @@ app.post('/api/chat', async (req, res) => {
                 {
                   text: replyText,
                   speechMetadata: {
-                    style: language === 'fr'
+                    style: detectedLanguage === 'fr'
                       ? 'Deep, elegant, calm French male voice with refined Parisian accent'
-                      : 'Deep, resonant, calm male voice with smooth American accent',
+                      : 'Deep, resonant, articulate American English male voice with clear US pronunciation',
                   },
                 },
               ],
@@ -188,7 +188,7 @@ app.post('/api/chat', async (req, res) => {
             responseModalities: ['AUDIO'],
             speechConfig: {
               voiceConfig: {
-                prebuiltVoiceConfig: { voiceName: 'Fenrir' },
+                prebuiltVoiceConfig: { voiceName: 'Charon' },
               },
             },
           },
@@ -203,7 +203,7 @@ app.post('/api/chat', async (req, res) => {
     res.json({
       text: replyText,
       audioBase64,
-      language,
+      language: detectedLanguage,
     });
   } catch (error: any) {
     console.error('Chat critical handler:', error);
@@ -227,6 +227,8 @@ app.post('/api/tts', async (req, res) => {
       return res.status(400).json({ error: 'Text is required' });
     }
 
+    const isFr = language === 'fr' || isFrenchMessage(text);
+
     const ttsResponse = await ai.models.generateContent({
       model: 'gemini-3.8-flash-lite-tts',
       contents: [
@@ -236,9 +238,9 @@ app.post('/api/tts', async (req, res) => {
             {
               text,
               speechMetadata: {
-                style: language === 'fr'
+                style: isFr
                   ? 'Deep, sophisticated male voice with authentic French accent'
-                  : 'Deep, resonant male voice with articulate American accent',
+                  : 'Deep, resonant male voice with articulate American English accent',
               },
             },
           ],
@@ -248,7 +250,7 @@ app.post('/api/tts', async (req, res) => {
         responseModalities: ['AUDIO'],
         speechConfig: {
           voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: 'Fenrir' },
+            prebuiltVoiceConfig: { voiceName: 'Charon' },
           },
         },
       },

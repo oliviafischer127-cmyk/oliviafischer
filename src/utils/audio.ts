@@ -111,7 +111,87 @@ export function stopCurrentPlayback() {
   }
 }
 
-// High-fidelity fallback speech using browser SpeechSynthesis with deep male styling
+// Preload voices immediately on load
+let cachedVoices: SpeechSynthesisVoice[] = [];
+if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+  cachedVoices = window.speechSynthesis.getVoices();
+  window.speechSynthesis.onvoiceschanged = () => {
+    cachedVoices = window.speechSynthesis.getVoices();
+  };
+}
+
+// Find strictly English or French voice, never defaulting to the system's German voice
+export function getStrictVoice(language: 'en' | 'fr' = 'en'): SpeechSynthesisVoice | null {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
+
+  let voices = window.speechSynthesis.getVoices();
+  if (!voices || voices.length === 0) {
+    voices = cachedVoices;
+  }
+  if (!voices || voices.length === 0) return null;
+
+  if (language === 'en') {
+    // Strictly filter for English voices ONLY. Reject any German, French, or foreign voice.
+    const enVoices = voices.filter((v) => {
+      const lang = v.lang.toLowerCase();
+      const name = v.name.toLowerCase();
+      const isEnglish = lang.startsWith('en') || lang.includes('en-us') || lang.includes('en_us') || lang.includes('en-gb');
+      const isGerman = lang.includes('de') || name.includes('german') || name.includes('deutsch') || name.includes('de-de') || name.includes('de_de');
+      return isEnglish && !isGerman;
+    });
+
+    if (enVoices.length > 0) {
+      // Priority 1: High-quality American Male voices
+      const usMale = enVoices.find((v) => {
+        const n = v.name.toLowerCase();
+        const l = v.lang.toLowerCase();
+        const isUs = l.includes('en-us') || l.includes('en_us');
+        return isUs && (n.includes('david') || n.includes('guy') || n.includes('mark') || n.includes('male') || n.includes('alex') || n.includes('natural'));
+      });
+      if (usMale) return usMale;
+
+      // Priority 2: Standard US English male or neutral
+      const anyUs = enVoices.find((v) => {
+        const l = v.lang.toLowerCase();
+        const n = v.name.toLowerCase();
+        return (l.includes('en-us') || l.includes('en_us')) && !n.includes('zira') && !n.includes('female');
+      });
+      if (anyUs) return anyUs;
+
+      // Priority 3: Any English male voice (e.g. Daniel UK)
+      const anyEnMale = enVoices.find((v) => {
+        const n = v.name.toLowerCase();
+        return n.includes('daniel') || n.includes('george') || n.includes('oliver') || n.includes('male');
+      });
+      if (anyEnMale) return anyEnMale;
+
+      // Fallback: First strictly English voice
+      return enVoices[0];
+    }
+    return null;
+  } else {
+    // Strictly filter for French voices ONLY.
+    const frVoices = voices.filter((v) => {
+      const lang = v.lang.toLowerCase();
+      const name = v.name.toLowerCase();
+      const isFrench = lang.startsWith('fr') || lang.includes('fr-fr') || lang.includes('fr_fr');
+      const isGerman = lang.includes('de') || name.includes('german') || name.includes('deutsch');
+      return isFrench && !isGerman;
+    });
+
+    if (frVoices.length > 0) {
+      const frMale = frVoices.find((v) => {
+        const n = v.name.toLowerCase();
+        return n.includes('paul') || n.includes('nicolas') || n.includes('guy') || n.includes('male') || n.includes('claude');
+      });
+      if (frMale) return frMale;
+      return frVoices[0];
+    }
+    return null;
+  }
+}
+
+// High-fidelity fallback speech using browser SpeechSynthesis with strict English/French voice
 export function speakWithBrowserTTS(
   text: string,
   language: 'en' | 'fr' = 'en',
@@ -131,36 +211,19 @@ export function speakWithBrowserTTS(
     if (!cleanText) return false;
 
     const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.lang = language === 'fr' ? 'fr-FR' : 'en-US';
 
-    // Deep male pitch tuning
-    utterance.pitch = 0.82; // Lower pitch gives deep masculine resonance
-    utterance.rate = 0.94;  // Poised, calm luxury pace
-
-    const voices = window.speechSynthesis.getVoices();
-    // Try to find an articulate male voice
-    const targetLang = language === 'fr' ? 'fr' : 'en';
-    const langVoices = voices.filter((v) => v.lang.toLowerCase().startsWith(targetLang));
-
-    const maleVoice = langVoices.find((v) => {
-      const name = v.name.toLowerCase();
-      return (
-        name.includes('male') ||
-        name.includes('guy') ||
-        name.includes('thomas') ||
-        name.includes('george') ||
-        name.includes('nicolas') ||
-        name.includes('paul') ||
-        name.includes('daniel') ||
-        name.includes('david')
-      );
-    });
-
-    if (maleVoice) {
-      utterance.voice = maleVoice;
-    } else if (langVoices.length > 0) {
-      utterance.voice = langVoices[0];
+    // Strictly assign English or French voice
+    const matchedVoice = getStrictVoice(language);
+    if (matchedVoice) {
+      utterance.voice = matchedVoice;
+      utterance.lang = matchedVoice.lang;
+    } else {
+      utterance.lang = language === 'fr' ? 'fr-FR' : 'en-US';
     }
+
+    // Pitch and pace
+    utterance.pitch = 0.88; // Deep masculine tone without distorting accent
+    utterance.rate = 0.96;  // Natural articulate executive pace
 
     utterance.onstart = () => {
       isCurrentlySpeakingTTS = true;
