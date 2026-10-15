@@ -1,0 +1,6 @@
+{
+  "name": "Wonny — Executive Voice Assistant for Olivia Fischer",
+  "description": "Sophisticated, minimalist voice assistant representing Olivia Fischer in English and French, powered by Gemini.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
