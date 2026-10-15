@@ -273,6 +273,51 @@ app.post('/api/tts', async (req, res) => {
   }
 });
 
+// Transcribe recorded audio (speech-to-text fallback)
+app.post('/api/transcribe', async (req, res) => {
+  try {
+    const { audioBase64, mimeType = 'audio/webm' } = req.body;
+    if (!audioBase64) {
+      return res.status(400).json({ error: 'Audio data is required' });
+    }
+
+    const audioPart = {
+      inlineData: {
+        mimeType,
+        data: audioBase64,
+      },
+    };
+
+    let transcript = '';
+    const candidateTranscribeModels = ['gemini-3.5-transcribe', 'gemini-3.8-flash', 'gemini-flash-latest'];
+
+    for (const model of candidateTranscribeModels) {
+      try {
+        const response = await ai.models.generateContent({
+          model,
+          contents: {
+            parts: [
+              audioPart,
+              { text: 'Transcribe this user speech accurately in the original spoken language (English or French). Output ONLY the transcript without extra commentary.' },
+            ],
+          },
+        });
+        if (response.text && response.text.trim()) {
+          transcript = response.text.trim();
+          break;
+        }
+      } catch (err: any) {
+        console.warn(`Transcribe model ${model} note:`, err?.message);
+      }
+    }
+
+    res.json({ transcript });
+  } catch (err: any) {
+    console.error('Transcribe error:', err);
+    res.json({ transcript: '' });
+  }
+});
+
 // Gemini Live WebSocket bridge for real-time bidirectional voice conversation
 wss.on('connection', async (clientWs: WebSocket) => {
   console.log('[Live] Client connected to /live');

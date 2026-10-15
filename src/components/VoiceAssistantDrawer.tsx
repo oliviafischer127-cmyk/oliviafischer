@@ -5,16 +5,22 @@ import {
   Volume2,
   VolumeX,
   Play,
+  Pause,
   RotateCcw,
   Sparkles,
   Send,
   X,
-  Globe,
   Radio,
-  ChevronDown,
+  Square,
+  AlertCircle,
 } from 'lucide-react';
 import { AudioWaveVisualizer } from './AudioWaveVisualizer.tsx';
-import { playWavBase64, LiveAudioPlayer, floatTo16BitPCM } from '../utils/audio.ts';
+import {
+  playWavBase64,
+  speakWithBrowserTTS,
+  stopCurrentPlayback,
+  unlockAudioContext,
+} from '../utils/audio.ts';
 
 export interface Message {
   id: string;
@@ -42,7 +48,7 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantProps> = ({
     {
       id: 'welcome-1',
       sender: 'wonny',
-      text: "Good day. I am Wonny, personal executive representative for Olivia Fischer. Whether you wish to explore her luxury brand marketing at Kusmi Tea Paris, her Franco-German academic credentials, or schedule an interview, I am at your disposal in both English and French.",
+      text: "Good day. I am Wonny, the personal executive voice assistant representing Olivia Fischer. I speak with a deep, calm male tone in both English and French. How may I introduce Olivia's luxury marketing achievements, her Kusmi Tea experience, or her Franco-German credentials today?",
       language: 'en',
       timestamp: 'Just now',
     },
@@ -52,27 +58,20 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantProps> = ({
   const [selectedLanguage, setSelectedLanguage] = useState<'en' | 'fr'>('en');
   const [isLoading, setIsLoading] = useState(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
-  const [isLiveListening, setIsLiveListening] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [interimTranscript, setInterimTranscript] = useState('');
   const [isMuted, setIsMuted] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState<'ready' | 'connecting' | 'idle'>('idle');
+  const [micError, setMicError] = useState<string | null>(null);
 
-  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
-  const livePlayerRef = useRef<LiveAudioPlayer | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const recognitionRef = useRef<any>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
-
-  // Initialize live audio player
-  useEffect(() => {
-    livePlayerRef.current = new LiveAudioPlayer();
-  }, []);
 
   // Auto-scroll messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isLoading]);
+  }, [messages, isLoading, interimTranscript]);
 
   // Handle triggered initial prompt from page
   useEffect(() => {
@@ -82,186 +81,183 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantProps> = ({
     }
   }, [initialPrompt, isOpen]);
 
-  // Handle Live WebSocket audio streaming
-  const startLiveConversation = async () => {
-    try {
-      setIsLiveListening(true);
-      setConnectionStatus('connecting');
-
-      // 1. Connect WebSocket to /live
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/live`;
-      const ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        setConnectionStatus('ready');
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === 'audio' && data.audio) {
-            setIsPlayingAudio(true);
-            if (!isMuted && livePlayerRef.current) {
-              livePlayerRef.current.playChunk(data.audio);
-            }
-          } else if (data.type === 'text' && data.text) {
-            // Append or update text from live stream
-            setMessages((prev) => {
-              const last = prev[prev.length - 1];
-              if (last && last.sender === 'wonny' && last.id.startsWith('live-')) {
-                return [
-                  ...prev.slice(0, -1),
-                  { ...last, text: last.text + data.text },
-                ];
-              } else {
-                return [
-                  ...prev,
-                  {
-                    id: `live-${Date.now()}`,
-                    sender: 'wonny',
-                    text: data.text,
-                    language: selectedLanguage,
-                    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                  },
-                ];
-              }
-            });
-          } else if (data.type === 'turnComplete') {
-            setIsPlayingAudio(false);
-          } else if (data.type === 'interrupted') {
-            setIsPlayingAudio(false);
-            if (livePlayerRef.current) {
-              livePlayerRef.current.stop();
-            }
-          }
-        } catch (e) {
-          console.error('Error handling live message:', e);
-        }
-      };
-
-      ws.onerror = (err) => {
-        console.warn('Live WebSocket error, using standard fallback:', err);
-      };
-
-      ws.onclose = () => {
-        setIsLiveListening(false);
-        setConnectionStatus('idle');
-      };
-
-      // 2. Start microphone capture
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaStreamRef.current = stream;
-
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      const audioCtx = new AudioCtx({ sampleRate: 16000 });
-      audioContextRef.current = audioCtx;
-
-      const source = audioCtx.createMediaStreamSource(stream);
-      const processor = audioCtx.createScriptProcessor(4096, 1, 1);
-      processorRef.current = processor;
-
-      processor.onaudioprocess = (e) => {
-        if (ws.readyState === WebSocket.OPEN) {
-          const inputData = e.inputBuffer.getChannelData(0);
-          const pcmBase64 = floatTo16BitPCM(inputData);
-          ws.send(JSON.stringify({ type: 'audio', audio: pcmBase64 }));
-        }
-      };
-
-      source.connect(processor);
-      processor.connect(audioCtx.destination);
-    } catch (err: any) {
-      console.warn('Microphone access or live connection error:', err);
-      setIsLiveListening(false);
-      setConnectionStatus('idle');
-      // Graceful notification
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `notice-${Date.now()}`,
-          sender: 'wonny',
-          text: "I am ready to speak with you. If microphone permissions are restricted in your browser, feel free to use the suggested prompts or text input below to converse aloud.",
-          language: selectedLanguage,
-          timestamp: 'Just now',
-        },
-      ]);
-    }
-  };
-
-  const stopLiveConversation = () => {
-    setIsLiveListening(false);
-    setConnectionStatus('idle');
-
-    if (processorRef.current) {
-      processorRef.current.disconnect();
-      processorRef.current = null;
-    }
-    if (audioContextRef.current) {
-      audioContextRef.current.close().catch(() => {});
-      audioContextRef.current = null;
-    }
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
-      mediaStreamRef.current = null;
-    }
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-    }
-    if (livePlayerRef.current) {
-      livePlayerRef.current.stop();
-    }
-    setIsPlayingAudio(false);
-  };
-
-  const toggleLiveVoice = () => {
-    if (isLiveListening) {
-      stopLiveConversation();
-    } else {
-      startLiveConversation();
-    }
-  };
-
-  // Play audio response using base64 WAV
-  const playMessageAudio = (audioBase64?: string | null, text?: string) => {
+  // Speak response with double-redundant audio pipeline
+  const speakResponse = (text: string, audioBase64?: string | null, language: 'en' | 'fr' = selectedLanguage) => {
     if (isMuted) return;
 
-    if (currentAudioRef.current) {
-      currentAudioRef.current.pause();
-      currentAudioRef.current = null;
-    }
+    unlockAudioContext();
+    setIsPlayingAudio(true);
 
     if (audioBase64) {
-      setIsPlayingAudio(true);
-      currentAudioRef.current = playWavBase64(audioBase64, () => {
-        setIsPlayingAudio(false);
-      });
-      return;
+      const audio = playWavBase64(
+        audioBase64,
+        () => setIsPlayingAudio(false),
+        () => setIsPlayingAudio(true)
+      );
+
+      // If audio player failed to launch, fallback to SpeechSynthesis
+      if (!audio) {
+        speakWithBrowserTTS(
+          text,
+          language,
+          () => setIsPlayingAudio(true),
+          () => setIsPlayingAudio(false)
+        );
+      }
+    } else {
+      speakWithBrowserTTS(
+        text,
+        language,
+        () => setIsPlayingAudio(true),
+        () => setIsPlayingAudio(false)
+      );
+    }
+  };
+
+  // Stop listening helper
+  const stopListening = () => {
+    setIsListening(false);
+    setInterimTranscript('');
+
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {
+        // ignore
+      }
+      recognitionRef.current = null;
     }
 
-    // If audio was not cached, generate on the fly via /api/tts
-    if (text) {
-      setIsPlayingAudio(true);
-      fetch('/api/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, language: selectedLanguage }),
-      })
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.audioBase64) {
-            currentAudioRef.current = playWavBase64(data.audioBase64, () => {
-              setIsPlayingAudio(false);
-            });
-          } else {
-            setIsPlayingAudio(false);
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch (e) {
+        // ignore
+      }
+      mediaRecorderRef.current = null;
+    }
+  };
+
+  // Start listening to the user's microphone with SpeechRecognition + MediaRecorder fallback
+  const startListening = async () => {
+    unlockAudioContext();
+    stopCurrentPlayback();
+    setIsPlayingAudio(false);
+    setMicError(null);
+    setInterimTranscript('');
+
+    const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    // Method 1: Web Speech API (Instant real-time transcription)
+    if (SpeechRec) {
+      try {
+        const recognition = new SpeechRec();
+        recognitionRef.current = recognition;
+        recognition.lang = selectedLanguage === 'fr' ? 'fr-FR' : 'en-US';
+        recognition.continuous = false;
+        recognition.interimResults = true;
+
+        recognition.onstart = () => {
+          setIsListening(true);
+        };
+
+        recognition.onresult = (event: any) => {
+          let current = '';
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            current += event.results[i][0].transcript;
           }
-        })
-        .catch(() => {
-          setIsPlayingAudio(false);
-        });
+          setInterimTranscript(current);
+
+          // If final result detected
+          if (event.results[0] && event.results[0].isFinal) {
+            const finalQuery = event.results[0][0].transcript.trim();
+            stopListening();
+            if (finalQuery) {
+              handleSendMessage(finalQuery);
+            }
+          }
+        };
+
+        recognition.onerror = (e: any) => {
+          console.warn('SpeechRecognition notice:', e.error);
+          if (e.error === 'not-allowed') {
+            setMicError('Microphone permission was denied. Please allow microphone access in your browser settings.');
+          }
+          stopListening();
+        };
+
+        recognition.onend = () => {
+          setIsListening(false);
+        };
+
+        recognition.start();
+        return;
+      } catch (err) {
+        console.warn('SpeechRecognition init error, falling back to MediaRecorder:', err);
+      }
+    }
+
+    // Method 2: MediaRecorder fallback with Gemini speech-to-text
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunksRef.current = [];
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        stream.getTracks().forEach((track) => track.stop());
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+
+        if (audioBlob.size > 1000) {
+          setInterimTranscript('Processing your speech with Gemini…');
+          const reader = new FileReader();
+          reader.onloadend = async () => {
+            const base64Data = (reader.result as string).split(',')[1];
+            try {
+              const res = await fetch('/api/transcribe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  audioBase64: base64Data,
+                  mimeType: 'audio/webm',
+                }),
+              });
+              const data = await res.json();
+              if (data.transcript && data.transcript.trim()) {
+                handleSendMessage(data.transcript.trim());
+              } else {
+                setMicError("I couldn't hear your words clearly. Please try speaking again or click one of the suggested questions.");
+              }
+            } catch (err) {
+              setMicError("Speech transcription latency. Please try again.");
+            } finally {
+              setInterimTranscript('');
+            }
+          };
+          reader.readAsDataURL(audioBlob);
+        }
+      };
+
+      mediaRecorder.start();
+      setIsListening(true);
+    } catch (err: any) {
+      console.warn('Microphone access denied:', err);
+      setMicError('Microphone permission required. Please allow microphone permissions or use the text prompt below.');
+      setIsListening(false);
+    }
+  };
+
+  const toggleListening = () => {
+    if (isListening) {
+      stopListening();
+    } else {
+      startListening();
     }
   };
 
@@ -269,6 +265,10 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantProps> = ({
   const handleSendMessage = async (textToSend: string) => {
     const trimmed = textToSend.trim();
     if (!trimmed || isLoading) return;
+
+    unlockAudioContext();
+    stopCurrentPlayback();
+    setIsPlayingAudio(false);
 
     const userMessage: Message = {
       id: `user-${Date.now()}`,
@@ -280,10 +280,12 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantProps> = ({
 
     setMessages((prev) => [...prev, userMessage]);
     setInputText('');
+    setInterimTranscript('');
+    setMicError(null);
     setIsLoading(true);
 
     try {
-      const historyPayload = messages.map((m) => ({
+      const historyPayload = messages.slice(-6).map((m) => ({
         role: m.sender === 'wonny' ? 'model' : 'user',
         content: m.text,
       }));
@@ -299,7 +301,7 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantProps> = ({
         }),
       });
 
-      if (!res.ok) throw new Error('Failed to reach assistant server');
+      if (!res.ok) throw new Error('Assistant response error');
 
       const data = await res.json();
       const replyMessage: Message = {
@@ -313,39 +315,45 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantProps> = ({
 
       setMessages((prev) => [...prev, replyMessage]);
 
-      if (data.audioBase64 && !isMuted) {
-        playMessageAudio(data.audioBase64);
-      }
+      // Speak aloud immediately!
+      speakResponse(data.text, data.audioBase64, selectedLanguage);
     } catch (err: any) {
       console.error('Chat error:', err);
+      const fallbackText =
+        selectedLanguage === 'fr'
+          ? "Je suis Wonny, représentant d'Olivia Fischer. Olivia est diplômée d'un double Master en management et marketing du luxe entre Berlin et Paris, avec une solide expérience chez Kusmi Tea."
+          : "I am Wonny, executive assistant representing Olivia Fischer. Olivia is a dual Master's candidate in luxury prestige marketing at ESCE Paris and HWR Berlin, with proven experience at Kusmi Tea Paris.";
+
       setMessages((prev) => [
         ...prev,
         {
-          id: `err-${Date.now()}`,
+          id: `fallback-${Date.now()}`,
           sender: 'wonny',
-          text: "I apologize, my executive audio connection encountered a brief latency. Please ask again or select one of the curated inquiries.",
+          text: fallbackText,
           language: selectedLanguage,
           timestamp: 'Just now',
         },
       ]);
+      speakResponse(fallbackText, null, selectedLanguage);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const sampleQuestions = selectedLanguage === 'en'
-    ? [
-        "Present Olivia Fischer's profile and background",
-        "Tell me about her work at Kusmi Tea Paris",
-        "What are her key skills in luxury marketing?",
-        "How can I contact Olivia for an interview?",
-      ]
-    : [
-        "Présentez le profil et l'expertise d'Olivia Fischer",
-        "Parlez-moi de son expérience chez Kusmi Tea Paris",
-        "Quelles sont ses compétences en marketing de luxe ?",
-        "Comment contacter Olivia pour un entretien ?",
-      ];
+  const sampleQuestions =
+    selectedLanguage === 'en'
+      ? [
+          "Present Olivia Fischer's profile and background",
+          "Tell me about her work at Kusmi Tea Paris",
+          "What makes Olivia unique for luxury brand marketing?",
+          "How can I contact Olivia for an interview?",
+        ]
+      : [
+          "Présentez le profil et l'expertise d'Olivia Fischer",
+          "Parlez-moi de son expérience chez Kusmi Tea Paris",
+          "Quelles sont ses compétences en marketing de prestige ?",
+          "Comment contacter Olivia pour un entretien ?",
+        ];
 
   if (!isOpen) return null;
 
@@ -354,12 +362,12 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantProps> = ({
       <div className="relative w-full max-w-xl h-full bg-[#FAF7F2] border-l border-[#EAE3D6] shadow-2xl flex flex-col justify-between overflow-hidden">
         
         {/* Header: Wonny Identity & Controls */}
-        <div className="px-6 py-4 border-b border-[#EAE3D6] bg-[#F7F3EB]/80 flex items-center justify-between">
+        <div className="px-6 py-4 border-b border-[#EAE3D6] bg-[#F7F3EB]/90 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="relative w-10 h-10 rounded-full bg-[#1F1D1A] flex items-center justify-center text-[#FAF7F2] shadow-sm">
               <span className="font-serif-luxury text-lg font-semibold tracking-wider">W</span>
               {isPlayingAudio && (
-                <span className="absolute -inset-1 rounded-full border border-[#A3835B] animate-ping opacity-75" />
+                <span className="absolute -inset-1 rounded-full border-2 border-[#A3835B] animate-ping opacity-75" />
               )}
             </div>
             <div>
@@ -368,11 +376,11 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantProps> = ({
                   Wonny
                 </h3>
                 <span className="text-xs px-2 py-0.5 rounded-full bg-[#EAE3D6] text-[#6B6155] font-medium tracking-wider">
-                  Deep Male Tone
+                  Deep Male Voice
                 </span>
               </div>
               <p className="text-xs text-[#7A7063]">
-                Executive Voice Liaison for Olivia Fischer
+                {selectedLanguage === 'fr' ? 'Voix masculine grave · Accent français' : 'Deep male tone · American accent'}
               </p>
             </div>
           </div>
@@ -389,7 +397,7 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantProps> = ({
                 }`}
                 title="American English"
               >
-                EN (US)
+                EN
               </button>
               <button
                 onClick={() => setSelectedLanguage('fr')}
@@ -404,13 +412,28 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantProps> = ({
               </button>
             </div>
 
+            {/* Stop / Pause Speaking Button */}
+            {isPlayingAudio && (
+              <button
+                onClick={() => {
+                  stopCurrentPlayback();
+                  setIsPlayingAudio(false);
+                }}
+                className="px-2.5 py-1.5 rounded-lg bg-[#FAF7F2] border border-[#EAE3D6] text-xs font-medium text-rose-700 hover:bg-rose-50 transition-colors flex items-center gap-1"
+                title="Stop Wonny Speaking"
+              >
+                <Square className="w-3 h-3 fill-current" />
+                <span>Pause</span>
+              </button>
+            )}
+
             {/* Mute button */}
             <button
               onClick={() => {
                 const next = !isMuted;
                 setIsMuted(next);
-                if (next && currentAudioRef.current) {
-                  currentAudioRef.current.pause();
+                if (next) {
+                  stopCurrentPlayback();
                   setIsPlayingAudio(false);
                 }
               }}
@@ -427,10 +450,12 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantProps> = ({
             {/* Close button */}
             <button
               onClick={() => {
-                stopLiveConversation();
+                stopListening();
+                stopCurrentPlayback();
+                setIsPlayingAudio(false);
                 onClose();
               }}
-              className="p-2 rounded-lg border border-[#EAE3D6] bg-[#FAF7F2] text-[#6B6155] hover:text-[#1F1D1A] hover:bg-[#F2ECE1] transition-colors"
+              className="p-2 rounded-lg border border-[#EAE3D6] bg-[#FAF7F2] text-[#6B6155] hover:text-[#1F1D1A] transition-colors"
               aria-label="Close"
             >
               <X className="w-4 h-4" />
@@ -443,22 +468,50 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantProps> = ({
           <div className="flex-1">
             <AudioWaveVisualizer
               isPlaying={isPlayingAudio}
-              isListening={isLiveListening}
+              isListening={isListening}
             />
           </div>
           <div className="pl-4 flex flex-col items-end shrink-0">
-            <span className="text-[11px] font-medium tracking-wide uppercase text-[#8C8070]">
+            <span className="text-[11px] font-semibold tracking-wide uppercase text-[#8C8070]">
               {isPlayingAudio
                 ? 'Wonny is speaking…'
-                : isLiveListening
-                ? 'Listening to your voice…'
-                : 'Awaiting your question'}
+                : isListening
+                ? 'Listening to you now…'
+                : 'Ready for your voice'}
             </span>
             <span className="text-[10px] text-[#A3998C]">
-              Gemini 3.8 Live & Speech
+              {selectedLanguage === 'fr' ? 'Français' : 'English (US)'} · Deep Tone
             </span>
           </div>
         </div>
+
+        {/* Interim Speech Transcription Banner */}
+        {isListening && (
+          <div className="px-6 py-2.5 bg-amber-50/80 border-b border-amber-200/60 flex items-center justify-between animate-in fade-in">
+            <div className="flex items-center gap-2 text-xs text-amber-900 font-medium">
+              <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
+              <span>
+                {interimTranscript
+                  ? `Hearing: "${interimTranscript}"`
+                  : 'Listening to your voice... Speak clearly into your mic'}
+              </span>
+            </div>
+            <button
+              onClick={stopListening}
+              className="text-[11px] text-amber-900 font-semibold underline hover:text-amber-950"
+            >
+              Done speaking
+            </button>
+          </div>
+        )}
+
+        {/* Mic Error Banner */}
+        {micError && (
+          <div className="px-6 py-2.5 bg-rose-50 border-b border-rose-200 flex items-center gap-2 text-xs text-rose-800 animate-in fade-in">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{micError}</span>
+          </div>
+        )}
 
         {/* Messages Transcript Scroll Area */}
         <div className="flex-1 p-6 overflow-y-auto space-y-5">
@@ -488,9 +541,9 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantProps> = ({
                 {msg.sender === 'wonny' && (
                   <div className="mt-3 pt-2 border-t border-[#EAE3D6]/60 flex items-center justify-between">
                     <button
-                      onClick={() => playMessageAudio(msg.audioBase64, msg.text)}
+                      onClick={() => speakResponse(msg.text, msg.audioBase64, msg.language || selectedLanguage)}
                       className="inline-flex items-center gap-1.5 text-xs text-[#A3835B] hover:text-[#806440] font-medium transition-colors"
-                      title="Listen to Wonny speak this"
+                      title="Hear Wonny speak this aloud"
                     >
                       <Play className="w-3.5 h-3.5 fill-current" />
                       <span>Hear Wonny</span>
@@ -510,7 +563,7 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantProps> = ({
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-[#A3835B] animate-ping" />
                   <span className="font-serif-luxury italic text-[#8C8070]">
-                    Wonny is reflecting on Olivia's portfolio…
+                    Wonny is articulating a response…
                   </span>
                 </div>
               </div>
@@ -521,9 +574,9 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantProps> = ({
         </div>
 
         {/* Curated Suggested Prompts */}
-        <div className="px-6 py-2 bg-[#F7F3EB]/60 border-t border-[#EAE3D6]">
-          <p className="text-[11px] font-medium text-[#8C8070] mb-2 uppercase tracking-wider">
-            Curated Executive Inquiries
+        <div className="px-6 py-2.5 bg-[#F7F3EB]/70 border-t border-[#EAE3D6]">
+          <p className="text-[11px] font-semibold text-[#8C8070] mb-2 uppercase tracking-wider">
+            Quick Voice Inquiries (Click to hear Wonny respond)
           </p>
           <div className="flex flex-wrap gap-2">
             {sampleQuestions.map((q, idx) => (
@@ -531,7 +584,7 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantProps> = ({
                 key={idx}
                 onClick={() => handleSendMessage(q)}
                 disabled={isLoading}
-                className="text-xs text-left px-3 py-1.5 rounded-lg bg-[#FAF7F2] border border-[#E4DCCF] text-[#4A433A] hover:bg-[#FFFFFF] hover:border-[#A3835B] hover:text-[#1F1D1A] transition-colors disabled:opacity-50"
+                className="text-xs text-left px-3 py-1.5 rounded-lg bg-[#FAF7F2] border border-[#E4DCCF] text-[#4A433A] hover:bg-[#FFFFFF] hover:border-[#A3835B] hover:text-[#1F1D1A] transition-colors disabled:opacity-50 shadow-2xs"
               >
                 {q}
               </button>
@@ -551,15 +604,15 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantProps> = ({
             {/* Live Mic Button */}
             <button
               type="button"
-              onClick={toggleLiveVoice}
-              className={`p-3 rounded-xl border transition-all flex items-center justify-center shrink-0 ${
-                isLiveListening
-                  ? 'bg-rose-600 border-rose-600 text-white shadow-md animate-pulse'
+              onClick={toggleListening}
+              className={`p-3.5 rounded-xl border transition-all flex items-center justify-center shrink-0 ${
+                isListening
+                  ? 'bg-rose-600 border-rose-600 text-white shadow-lg animate-pulse ring-4 ring-rose-200'
                   : 'bg-[#1F1D1A] border-[#1F1D1A] text-[#FAF7F2] hover:bg-[#38332E]'
               }`}
-              title={isLiveListening ? 'Stop Live Voice Stream' : 'Start Live Voice Conversation with Wonny'}
+              title={isListening ? 'Stop Listening' : 'Click to Speak Aloud to Wonny'}
             >
-              {isLiveListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+              {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5 text-[#C5A880]" />}
             </button>
 
             {/* Text Input */}
@@ -570,8 +623,8 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantProps> = ({
                 onChange={(e) => setInputText(e.target.value)}
                 placeholder={
                   selectedLanguage === 'fr'
-                    ? "Posez votre question à Wonny..."
-                    : "Ask Wonny about Olivia's experience, skills, or studies..."
+                    ? "Parlez au micro ou écrivez à Wonny..."
+                    : "Speak with mic or ask Wonny about Olivia..."
                 }
                 className="w-full pl-4 pr-10 py-3 bg-[#FFFFFF] border border-[#E4DCCF] rounded-xl text-sm text-[#1F1D1A] placeholder-[#9E9485] focus:outline-none focus:border-[#A3835B] focus:ring-1 focus:ring-[#A3835B]"
               />
@@ -579,17 +632,21 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantProps> = ({
                 type="submit"
                 disabled={!inputText.trim() || isLoading}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-[#6B6155] hover:text-[#1F1D1A] disabled:opacity-30 disabled:hover:text-[#6B6155] transition-colors"
-                title="Send Inquiry"
+                title="Send"
               >
                 <Send className="w-4 h-4" />
               </button>
             </div>
           </form>
 
-          <div className="mt-2 flex items-center justify-between text-[11px] text-[#8C8070] px-1">
-            <span className="flex items-center gap-1">
-              <Radio className={`w-3 h-3 ${isLiveListening ? 'text-rose-500 animate-pulse' : 'text-[#A3835B]'}`} />
-              {isLiveListening ? 'Live WebSocket active' : 'Click mic for live conversation or type above'}
+          <div className="mt-2.5 flex items-center justify-between text-[11px] text-[#8C8070] px-1">
+            <span className="flex items-center gap-1.5 font-medium">
+              <span className={`w-2 h-2 rounded-full ${isListening ? 'bg-rose-500 animate-ping' : isPlayingAudio ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`} />
+              {isListening
+                ? 'Listening to your microphone...'
+                : isPlayingAudio
+                ? 'Wonny is speaking aloud'
+                : 'Click the black mic to speak'}
             </span>
             <span>Olivia Fischer · ESCE Paris & HWR Berlin</span>
           </div>

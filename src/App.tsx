@@ -21,7 +21,12 @@ import {
 } from 'lucide-react';
 import { VoiceAssistantDrawer } from './components/VoiceAssistantDrawer.tsx';
 import { AudioWaveVisualizer } from './components/AudioWaveVisualizer.tsx';
-import { playWavBase64 } from './utils/audio.ts';
+import {
+  playWavBase64,
+  stopCurrentPlayback,
+  unlockAudioContext,
+  speakWithBrowserTTS,
+} from './utils/audio.ts';
 
 const OLIVIA_PORTRAIT = '/src/assets/images/olivia_bewerbungsfoto_1792070967595.jpg';
 const KUSMI_CAMPAIGN = '/src/assets/images/kusmi_campaign_1792070052293.jpg';
@@ -47,18 +52,23 @@ export default function App() {
   };
 
   const playWonnyIntroduction = async () => {
-    if (isHeroAudioPlaying && heroAudioObj) {
-      heroAudioObj.pause();
+    // If already playing, stop immediately
+    if (isHeroAudioPlaying) {
+      stopCurrentPlayback();
       setIsHeroAudioPlaying(false);
       return;
     }
 
+    // Unlock browser audio context synchronously inside click handler
+    unlockAudioContext();
+
     const greetingText =
       selectedLanguage === 'fr'
-        ? "Bonjour et bienvenue. Je m'appelle Wonny, l'assistant vocal exécutif d'Olivia Fischer. Je suis à votre service pour vous présenter son parcours en marketing de luxe chez Kusmi Tea Paris ainsi que son double Master franco-allemand."
-        : "Good day and welcome. My name is Wonny, the executive voice assistant representing Olivia Fischer. I am delighted to introduce her expertise in luxury marketing at Kusmi Tea Paris, along with her Franco-German double Master's degree.";
+        ? "Bonjour et bienvenue. Je suis Wonny, l'assistant vocal exécutif d'Olivia Fischer. Je suis à votre service pour vous présenter son parcours en marketing de luxe chez Kusmi Tea Paris ainsi que son double Master franco-allemand."
+        : "Good day and welcome. I am Wonny, the executive voice assistant representing Olivia Fischer. I am delighted to introduce her expertise in luxury brand marketing at Kusmi Tea Paris, along with her Franco-German double Master's degree.";
 
     setIsHeroAudioPlaying(true);
+
     try {
       const res = await fetch('/api/tts', {
         method: 'POST',
@@ -66,17 +76,40 @@ export default function App() {
         body: JSON.stringify({ text: greetingText, language: selectedLanguage }),
       });
       const data = await res.json();
+
       if (data.audioBase64) {
-        const audio = playWavBase64(data.audioBase64, () => {
-          setIsHeroAudioPlaying(false);
-        });
-        setHeroAudioObj(audio);
+        const audio = playWavBase64(
+          data.audioBase64,
+          () => setIsHeroAudioPlaying(false),
+          () => setIsHeroAudioPlaying(true)
+        );
+
+        if (!audio) {
+          // Fallback to browser SpeechSynthesis
+          speakWithBrowserTTS(
+            greetingText,
+            selectedLanguage,
+            () => setIsHeroAudioPlaying(true),
+            () => setIsHeroAudioPlaying(false)
+          );
+        }
       } else {
-        setIsHeroAudioPlaying(false);
+        // Fallback to browser SpeechSynthesis
+        speakWithBrowserTTS(
+          greetingText,
+          selectedLanguage,
+          () => setIsHeroAudioPlaying(true),
+          () => setIsHeroAudioPlaying(false)
+        );
       }
     } catch (err) {
-      console.warn('Could not play greeting:', err);
-      setIsHeroAudioPlaying(false);
+      console.warn('Network TTS note, using speech synthesis:', err);
+      speakWithBrowserTTS(
+        greetingText,
+        selectedLanguage,
+        () => setIsHeroAudioPlaying(true),
+        () => setIsHeroAudioPlaying(false)
+      );
     }
   };
 
